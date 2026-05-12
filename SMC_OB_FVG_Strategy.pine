@@ -82,8 +82,8 @@ if not na(swL)
     if array.size(slArr) > 6
         array.pop(slArr)
 
-f_swH(n) => array.size(shArr) > n ? array.get(shArr, n) : na
-f_swL(n) => array.size(slArr) > n ? array.get(slArr, n) : na
+f_swH(n) => n >= 0 and array.size(shArr) > n ? array.get(shArr, n) : na
+f_swL(n) => n >= 0 and array.size(slArr) > n ? array.get(slArr, n) : na
 
 // ═══════════════════════════════════════════════════════
 //              ORDER BLOCK DETECTION
@@ -198,20 +198,22 @@ var line  ssl_line = na, var line  bsl_line = na
 var label ssl_lbl  = na, var label bsl_lbl  = na
 
 if bOB_ok
-    for i = 0 to array.size(slArr) - 1
-        lvl = f_swL(i)
-        if not na(lvl) and lvl < bOB_lo
-            liqSSL := lvl
-            break
+    if array.size(slArr) > 0
+        for i = 0 to array.size(slArr) - 1
+            lvl = f_swL(i)
+            if not na(lvl) and lvl < bOB_lo
+                liqSSL := lvl
+                break
 else
     liqSSL := na
 
 if rOB_ok
-    for i = 0 to array.size(shArr) - 1
-        lvl = f_swH(i)
-        if not na(lvl) and lvl > rOB_hi
-            liqBSL := lvl
-            break
+    if array.size(shArr) > 0
+        for i = 0 to array.size(shArr) - 1
+            lvl = f_swH(i)
+            if not na(lvl) and lvl > rOB_hi
+                liqBSL := lvl
+                break
 else
     liqBSL := na
 
@@ -351,11 +353,12 @@ longSL = not na(liqSSL) ? liqSSL - syminfo.mintick * 3 :
          not na(bOB_lo)  ? bOB_lo  - (bOB_hi - bOB_lo) * 0.10 : na
 
 float longTP = na
-for i = 0 to array.size(shArr) - 1
-    h = f_swH(i)
-    if not na(h) and h > close * 1.002
-        longTP := h
-        break
+if array.size(shArr) > 0
+    for i = 0 to array.size(shArr) - 1
+        h = f_swH(i)
+        if not na(h) and h > close * 1.002
+            longTP := h
+            break
 if na(longTP) and not na(longSL)
     longTP := close + (close - longSL) * 1.5
 
@@ -363,11 +366,12 @@ shortSL = not na(liqBSL) ? liqBSL + syminfo.mintick * 3 :
           not na(rOB_hi)  ? rOB_hi  + (rOB_hi - rOB_lo) * 0.10 : na
 
 float shortTP = na
-for i = 0 to array.size(slArr) - 1
-    l = f_swL(i)
-    if not na(l) and l < close * 0.998
-        shortTP := l
-        break
+if array.size(slArr) > 0
+    for i = 0 to array.size(slArr) - 1
+        l = f_swL(i)
+        if not na(l) and l < close * 0.998
+            shortTP := l
+            break
 if na(shortTP) and not na(shortSL)
     shortTP := close - (shortSL - close) * 1.5
 
