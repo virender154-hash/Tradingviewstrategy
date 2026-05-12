@@ -5,13 +5,8 @@
 // ║   LAYER 1 – Order Block  (support / resistance) – selectable TF    ║
 // ║   LAYER 2 – FVG          (bullish / bearish gap) – selectable TF   ║
 // ║   LAYER 3 – Liquidity    (SSL below OB / BSL above OB)             ║
-// ║   LAYER 4 – Institutional Activity                                  ║
-// ║              • Volume Spike  : volume >> avg  → big player active  ║
-// ║              • Inst Engulf   : high-vol engulfing candle at zone    ║
-// ║              • Delta Bias    : body/range ratio shows conviction    ║
-// ║   LAYER 5 – Trap Candle  (Liquidity Sweep & Reversal)              ║
-// ║              • Bear Trap : wick below swing low  → close above     ║
-// ║              • Bull Trap : wick above swing high → close below     ║
+// ║   LAYER 4 – Institutional Activity (Volume, Engulf, Delta)         ║
+// ║   LAYER 5 – Trap Candle  (Bear Trap / Bull Trap)                   ║
 // ║   ENTRY   – OB/FVG retest + Institutional confirmation             ║
 // ║   SL      – Liquidity level (SSL / BSL)                            ║
 // ║   TP      – Next Swing High (long) / Next Swing Low (short)        ║
@@ -31,21 +26,19 @@ strategy("SMC: OB+FVG+Institutional+Trap | XAUUSD & BTC",
 //                       INPUTS
 // ═══════════════════════════════════════════════════════
 grpD = "── Detection Settings ──"
-i_swingLen    = input.int      (5,    "Swing Length (bars each side)",   minval=2, maxval=20, group=grpD)
-i_obLookback  = input.int      (4,    "OB Lookback Bars",                minval=2, maxval=10, group=grpD)
-i_obTF        = input.timeframe("",   "Order Block Timeframe",           group=grpD,
-                                tooltip="Blank = current chart TF.  Set higher TF for multi-TF OB (e.g. 1H, 4H, D)")
-i_fvgTF       = input.timeframe("",   "FVG Timeframe",                   group=grpD,
-                                tooltip="Blank = current chart TF.  Set higher TF for multi-TF FVG (e.g. 1H, 4H, D)")
+i_swingLen    = input.int      (5,   "Swing Length (bars each side)", minval=2, maxval=20, group=grpD)
+i_obLookback  = input.int      (4,   "OB Lookback Bars",              minval=2, maxval=10, group=grpD)
+i_obTF        = input.timeframe("",  "Order Block Timeframe",         group=grpD,
+                                tooltip="Blank = current TF.  e.g. 1H, 4H, D for multi-TF OB")
+i_fvgTF       = input.timeframe("",  "FVG Timeframe",                 group=grpD,
+                                tooltip="Blank = current TF.  e.g. 1H, 4H, D for multi-TF FVG")
 
 grpI = "── Institutional & Trap Settings ──"
 i_volLen      = input.int  (20,   "Volume MA Length",               minval=5,  maxval=50, group=grpI)
-i_volMult     = input.float(1.5,  "Inst. Volume Multiplier (x avg)",minval=1.0, step=0.1,  group=grpI,
-                            tooltip="Volume above this multiple of average = institutional activity")
+i_volMult     = input.float(1.5,  "Inst. Volume Multiplier (x avg)",minval=1.0, step=0.1,  group=grpI)
 i_trapWick    = input.float(0.30, "Min Trap Wick Ratio",            minval=0.1, step=0.05, group=grpI,
-                            tooltip="Trap wick >= this fraction of total candle range (0.30 = 30%)")
-i_requireConf = input.bool (true, "Require Institutional Confirmation for Entry", group=grpI,
-                            tooltip="ON = entry needs volume/trap/engulf signal at OB/FVG retest")
+                            tooltip="Trap wick >= this % of total candle range (0.30 = 30%)")
+i_requireConf = input.bool (true, "Require Institutional Confirmation for Entry", group=grpI)
 
 grpV = "── Display ──"
 i_showOB      = input.bool(true,  "Show Order Blocks",          group=grpV)
@@ -67,21 +60,24 @@ i_colInstBuy  = input.color(color.new(color.lime,   88), "Inst Buy Vol BG",     
 i_colInstSel  = input.color(color.new(color.red,    88), "Inst Sell Vol BG",    group=grpC)
 
 // ═══════════════════════════════════════════════════════
-//          MULTI-TIMEFRAME DATA  (for OB and FVG)
+//          MULTI-TIMEFRAME DATA
 // ═══════════════════════════════════════════════════════
 ob_tf  = i_obTF  == "" ? timeframe.period : i_obTF
 fvg_tf = i_fvgTF == "" ? timeframe.period : i_fvgTF
 
-// OB timeframe OHLC + timestamps
+// HTF data – only request what we need
 [ob_o, ob_h, ob_l, ob_c, ob_t] = request.security(syminfo.tickerid, ob_tf,
      [open, high, low, close, time], lookahead=barmerge.lookahead_off)
 
-// FVG timeframe OHLC + timestamps
 [fvg_h, fvg_l, fvg_t] = request.security(syminfo.tickerid, fvg_tf,
      [high, low, time], lookahead=barmerge.lookahead_off)
 
+// Fire OB / FVG logic only when the HTF bar itself changes (avoids duplicate detections)
+ob_newBar  = ta.change(ob_t)  != 0
+fvg_newBar = ta.change(fvg_t) != 0
+
 // ═══════════════════════════════════════════════════════
-//         SWING HIGH / LOW  (current TF)
+//         SWING HIGH / LOW  (current TF – for TP & traps)
 // ═══════════════════════════════════════════════════════
 swH = ta.pivothigh(high, i_swingLen, i_swingLen)
 swL = ta.pivotlow (low,  i_swingLen, i_swingLen)
@@ -108,145 +104,137 @@ plotshape(i_showSwings and not na(swL), "Swing Low",  shape.labelup,   location.
          color.new(color.teal, 40), text="L", textcolor=color.white, size=size.tiny, offset=-i_swingLen)
 
 // ═══════════════════════════════════════════════════════
-//          ORDER BLOCK DETECTION  (OB timeframe)
+//          ORDER BLOCK DETECTION
 // ═══════════════════════════════════════════════════════
 ob_isBull = ob_c > ob_o
 ob_isBear = ob_c < ob_o
 
-// Impulse = 2 consecutive strong candles same direction
 ob_bullImpulse = ob_isBull and ob_isBull[1] and ob_h > ob_h[1] and ob_h[1] > ob_h[2]
 ob_bearImpulse = ob_isBear and ob_isBear[1] and ob_l < ob_l[1] and ob_l[1] < ob_l[2]
 
-// ── Bullish OB state ──
-var float bOB_hi  = na, var float bOB_lo  = na
-var int   bOB_t   = na                          // bar open-time of the OB candle
+// ── Bullish OB ──
+var float bOB_hi  = na,  var float bOB_lo  = na
+var int   bOB_idx = na
 var bool  bOB_ok  = false, var bool bOB_new = false
 var box   bOB_box = na
 
-// ── Bearish OB state ──
-var float rOB_hi  = na, var float rOB_lo  = na
-var int   rOB_t   = na
+// ── Bearish OB ──
+var float rOB_hi  = na,  var float rOB_lo  = na
+var int   rOB_idx = na
 var bool  rOB_ok  = false, var bool rOB_new = false
 var box   rOB_box = na
 
-if ob_bullImpulse
+// Detect only on HTF bar change to avoid duplicates
+if ob_newBar and ob_bullImpulse
     for i = 2 to i_obLookback + 2
         if ob_isBear[i]
-            bOB_hi := ob_h[i], bOB_lo := ob_l[i]
-            bOB_t  := int(ob_t[i])
-            bOB_ok := true, bOB_new := true
+            bOB_hi  := ob_h[i]
+            bOB_lo  := ob_l[i]
+            bOB_idx := bar_index[i]
+            bOB_ok  := true
+            bOB_new := true
             break
 
-if ob_bearImpulse
+if ob_newBar and ob_bearImpulse
     for i = 2 to i_obLookback + 2
         if ob_isBull[i]
-            rOB_hi := ob_h[i], rOB_lo := ob_l[i]
-            rOB_t  := int(ob_t[i])
-            rOB_ok := true, rOB_new := true
+            rOB_hi  := ob_h[i]
+            rOB_lo  := ob_l[i]
+            rOB_idx := bar_index[i]
+            rOB_ok  := true
+            rOB_new := true
             break
 
-// Invalidate on close-through
+// Invalidate when price closes through the zone
 if bOB_ok and close < bOB_lo
     bOB_ok := false
     if not na(bOB_box)
-        box.set_bgcolor      (bOB_box, color.new(color.lime, 95))
-        box.set_border_color (bOB_box, color.new(color.lime, 70))
+        // Fade the box to mark it as broken (stops visual confusion)
+        box.set_bgcolor     (bOB_box, color.new(color.lime, 94))
+        box.set_border_color(bOB_box, color.new(color.lime, 75))
 
 if rOB_ok and close > rOB_hi
     rOB_ok := false
     if not na(rOB_box)
-        box.set_bgcolor      (rOB_box, color.new(color.red, 95))
-        box.set_border_color (rOB_box, color.new(color.red, 70))
+        box.set_bgcolor     (rOB_box, color.new(color.red, 94))
+        box.set_border_color(rOB_box, color.new(color.red, 75))
 
-// Draw OB boxes anchored to actual candle time (xloc.bar_time)
+// Draw OB boxes  –  extend=extend.right keeps the box live on the chart
 if bOB_new
     if i_showOB
         if not na(bOB_box)
             box.delete(bOB_box)
-        bOB_box := box.new(bOB_t, bOB_hi, int(time_close), bOB_lo,
-                          xloc         = xloc.bar_time,
+        bOB_box := box.new(bOB_idx, bOB_hi, bar_index, bOB_lo,
                           border_color = color.lime,
                           bgcolor      = i_colBullOB,
-                          border_width = 2)
+                          border_width = 2,
+                          extend       = extend.right)
     bOB_new := false
 
 if rOB_new
     if i_showOB
         if not na(rOB_box)
             box.delete(rOB_box)
-        rOB_box := box.new(rOB_t, rOB_hi, int(time_close), rOB_lo,
-                          xloc         = xloc.bar_time,
+        rOB_box := box.new(rOB_idx, rOB_hi, bar_index, rOB_lo,
                           border_color = color.red,
                           bgcolor      = i_colBearOB,
-                          border_width = 2)
+                          border_width = 2,
+                          extend       = extend.right)
     rOB_new := false
 
-// Extend right edge of active OB boxes to the current bar
-if bOB_ok and not na(bOB_box)
-    box.set_right(bOB_box, int(time_close))
-if rOB_ok and not na(rOB_box)
-    box.set_right(rOB_box, int(time_close))
-
 // ═══════════════════════════════════════════════════════
-//          FAIR VALUE GAP  (FVG timeframe)
+//          FAIR VALUE GAP (FVG)
 // ═══════════════════════════════════════════════════════
-// Bullish FVG : fvg_l[0] > fvg_h[2]  →  gap up   (support on retest)
-// Bearish FVG : fvg_h[0] < fvg_l[2]  →  gap down  (resistance on retest)
-
 var float bFVG_top = na, var float bFVG_bot = na
-var int   bFVG_t   = na
 var bool  bFVG_ok  = false, var box bFVG_box = na
 
 var float rFVG_top = na, var float rFVG_bot = na
-var int   rFVG_t   = na
 var bool  rFVG_ok  = false, var box rFVG_box = na
 
-if fvg_l > fvg_h[2]
+// Detect Bullish FVG: gap up  (fvg_l > fvg_h[2])
+if fvg_newBar and fvg_l > fvg_h[2]
     bFVG_top := fvg_l
     bFVG_bot := fvg_h[2]
-    bFVG_t   := int(fvg_t[2])
     bFVG_ok  := true
     if i_showFVG
         if not na(bFVG_box)
             box.delete(bFVG_box)
-        bFVG_box := box.new(bFVG_t, bFVG_top, int(time_close), bFVG_bot,
-                           xloc         = xloc.bar_time,
+        bFVG_box := box.new(bar_index - 2, bFVG_top, bar_index, bFVG_bot,
                            border_color = color.aqua,
                            bgcolor      = i_colBullFVG,
-                           border_width = 1)
+                           border_width = 1,
+                           extend       = extend.right)
 
-if fvg_h < fvg_l[2]
+// Detect Bearish FVG: gap down  (fvg_h < fvg_l[2])
+if fvg_newBar and fvg_h < fvg_l[2]
     rFVG_top := fvg_l[2]
     rFVG_bot := fvg_h
-    rFVG_t   := int(fvg_t[2])
     rFVG_ok  := true
     if i_showFVG
         if not na(rFVG_box)
             box.delete(rFVG_box)
-        rFVG_box := box.new(rFVG_t, rFVG_top, int(time_close), rFVG_bot,
-                           xloc         = xloc.bar_time,
+        rFVG_box := box.new(bar_index - 2, rFVG_top, bar_index, rFVG_bot,
                            border_color = color.orange,
                            bgcolor      = i_colBearFVG,
-                           border_width = 1)
+                           border_width = 1,
+                           extend       = extend.right)
 
-// Invalidate when filled
+// Invalidate when fully filled
 if bFVG_ok and close < bFVG_bot
     bFVG_ok := false
+    if not na(bFVG_box)
+        box.set_bgcolor     (bFVG_box, color.new(color.aqua,   95))
+        box.set_border_color(bFVG_box, color.new(color.aqua,   75))
+
 if rFVG_ok and close > rFVG_top
     rFVG_ok := false
-
-// Extend active FVG boxes to current bar
-if bFVG_ok and not na(bFVG_box)
-    box.set_right(bFVG_box, int(time_close))
-if rFVG_ok and not na(rFVG_box)
-    box.set_right(rFVG_box, int(time_close))
+    if not na(rFVG_box)
+        box.set_bgcolor     (rFVG_box, color.new(color.orange, 95))
+        box.set_border_color(rFVG_box, color.new(color.orange, 75))
 
 // ═══════════════════════════════════════════════════════
 //          LIQUIDITY MAPPING
 // ═══════════════════════════════════════════════════════
-// Bullish OB (support)    → SSL = swing lows BELOW OB  → Long SL
-// Bearish OB (resistance) → BSL = swing highs ABOVE OB → Short SL
-
 var float liqSSL = na, var float liqBSL = na
 var line  ssl_line = na, var line  bsl_line = na
 var label ssl_lbl  = na, var label bsl_lbl  = na
@@ -271,25 +259,30 @@ if rOB_ok
 else
     liqBSL := na
 
+// Liquidity lines – extend=extend.both makes them visible across the whole chart
 if i_showLiq and barstate.islast
     if not na(liqSSL)
         if not na(ssl_line)
             line.delete(ssl_line)
         if not na(ssl_lbl)
             label.delete(ssl_lbl)
-        ssl_line := line.new(bar_index - 80, liqSSL, bar_index + 15, liqSSL,
-                            color=i_colSSL, style=line.style_dashed, width=2)
-        ssl_lbl  := label.new(bar_index + 16, liqSSL, "SSL  (Long SL)",
+        // Single-point line with extend=both draws across the entire chart
+        ssl_line := line.new(bar_index, liqSSL, bar_index, liqSSL,
+                            color=i_colSSL, style=line.style_dashed, width=2,
+                            extend=extend.both)
+        ssl_lbl  := label.new(bar_index + 2, liqSSL, "SSL  (Long SL)",
                              color=i_colSSL, textcolor=color.black,
                              style=label.style_label_left, size=size.small)
+
     if not na(liqBSL)
         if not na(bsl_line)
             line.delete(bsl_line)
         if not na(bsl_lbl)
             label.delete(bsl_lbl)
-        bsl_line := line.new(bar_index - 80, liqBSL, bar_index + 15, liqBSL,
-                            color=i_colBSL, style=line.style_dashed, width=2)
-        bsl_lbl  := label.new(bar_index + 16, liqBSL, "BSL  (Short SL)",
+        bsl_line := line.new(bar_index, liqBSL, bar_index, liqBSL,
+                            color=i_colBSL, style=line.style_dashed, width=2,
+                            extend=extend.both)
+        bsl_lbl  := label.new(bar_index + 2, liqBSL, "BSL  (Short SL)",
                              color=i_colBSL, textcolor=color.black,
                              style=label.style_label_left, size=size.small)
 
@@ -299,27 +292,23 @@ if i_showLiq and barstate.islast
 isBullCandle = close > open
 isBearCandle = close < open
 
-// Volume Spike
 hasVol    = not na(volume) and volume > 0
 avgVol    = ta.ema(nz(volume), i_volLen)
 relVol    = hasVol ? volume / avgVol : 0.0
 isHighVol = hasVol and relVol >= i_volMult
 
-// Institutional Engulfing (high-volume body engulfs previous body)
 bullEngulf = isBullCandle and isBearCandle[1] and
-             open  <= close[1] and close >= open[1] and isHighVol
+             open <= close[1] and close >= open[1] and isHighVol
 
 bearEngulf = isBearCandle and isBullCandle[1] and
-             open  >= close[1] and close <= open[1] and isHighVol
+             open >= close[1] and close <= open[1] and isHighVol
 
-// Delta Bias  (body/range conviction)
-candleRange    = math.max(high - low, syminfo.mintick)
-bodySize       = math.abs(close - open)
-deltaRatio     = bodySize / candleRange
+candleRange     = math.max(high - low, syminfo.mintick)
+bodySize        = math.abs(close - open)
+deltaRatio      = bodySize / candleRange
 strongBullDelta = isBullCandle and deltaRatio >= 0.60 and isHighVol
 strongBearDelta = isBearCandle and deltaRatio >= 0.60 and isHighVol
 
-// Combined signals
 instBuy  = (isHighVol and isBullCandle) or bullEngulf or strongBullDelta
 instSell = (isHighVol and isBearCandle) or bearEngulf or strongBearDelta
 
@@ -333,14 +322,12 @@ instScore   = instBullPts - instBearPts
 recentSwL = f_swL(0)
 recentSwH = f_swH(0)
 
-// Bear Trap: wick swept below swing low, recovered above → institutions bought stops
 bearTrap = not na(recentSwL)                        and
            low   < recentSwL                        and
            close > recentSwL                        and
            isBullCandle                             and
            (recentSwL - low) / candleRange >= i_trapWick
 
-// Bull Trap: wick swept above swing high, rejected below → institutions sold stops
 bullTrap = not na(recentSwH)                        and
            high  > recentSwH                        and
            close < recentSwH                        and
@@ -399,59 +386,48 @@ if na(shortTP) and not na(shortSL)
 //          STRATEGY EXECUTION
 // ═══════════════════════════════════════════════════════
 if longEntry and not na(longSL) and not na(longTP) and longTP > close and longSL < close
-    strategy.entry("Long",  strategy.long,  comment="Long @ OB/FVG+Inst")
+    strategy.entry("Long",  strategy.long,  comment="Long @ OB/FVG")
     strategy.exit ("LongX", "Long",  stop=longSL,  limit=longTP)
 
 if shortEntry and not na(shortSL) and not na(shortTP) and shortTP < close and shortSL > close
-    strategy.entry("Short", strategy.short, comment="Short @ OB/FVG+Inst")
+    strategy.entry("Short", strategy.short, comment="Short @ OB/FVG")
     strategy.exit ("ShortX","Short", stop=shortSL, limit=shortTP)
 
 // ═══════════════════════════════════════════════════════
 //          VISUAL OUTPUTS
 // ═══════════════════════════════════════════════════════
-
-// High-volume bar background
 bgcolor(i_showVolBG and isHighVol ?
         (isBullCandle ? i_colInstBuy : i_colInstSel) : na,
         title="Institutional Volume Bar")
 
-// Entry signals
 plotshape(longEntry,  "Long Entry",  shape.triangleup,   location.belowbar, color.lime, size=size.normal)
 plotshape(shortEntry, "Short Entry", shape.triangledown, location.abovebar, color.red,  size=size.normal)
 
-// Trap candle labels
 if i_showTrap
     if bearTrap
-        label.new(bar_index, low,
-                 "Bear Trap\n(Sweep↓)",
+        label.new(bar_index, low,  "Bear Trap\n(Sweep↓)",
                  color=color.new(color.lime, 20), textcolor=color.white,
                  style=label.style_label_up, size=size.small)
     if bullTrap
-        label.new(bar_index, high,
-                 "Bull Trap\n(Sweep↑)",
+        label.new(bar_index, high, "Bull Trap\n(Sweep↑)",
                  color=color.new(color.red, 20), textcolor=color.white,
                  style=label.style_label_down, size=size.small)
 
-// Institutional labels
 if i_showInst
     if bullEngulf
-        label.new(bar_index, low,
-                 "Inst Buy\n(Engulf)",
+        label.new(bar_index, low,  "Inst Buy\n(Engulf)",
                  color=color.new(color.lime, 40), textcolor=color.white,
                  style=label.style_label_up, size=size.small)
     if bearEngulf
-        label.new(bar_index, high,
-                 "Inst Sell\n(Engulf)",
+        label.new(bar_index, high, "Inst Sell\n(Engulf)",
                  color=color.new(color.red, 40), textcolor=color.white,
                  style=label.style_label_down, size=size.small)
     if strongBullDelta and not bullEngulf
-        label.new(bar_index, low,
-                 "Delta Buy",
-                 color=color.new(color.green, 50), textcolor=color.white,
+        label.new(bar_index, low,  "Delta Buy",
+                 color=color.new(color.green,  50), textcolor=color.white,
                  style=label.style_label_up, size=size.tiny)
     if strongBearDelta and not bearEngulf
-        label.new(bar_index, high,
-                 "Delta Sell",
+        label.new(bar_index, high, "Delta Sell",
                  color=color.new(color.maroon, 50), textcolor=color.white,
                  style=label.style_label_down, size=size.tiny)
 
@@ -466,10 +442,10 @@ var table T = table.new(position.top_right, 2, 14,
                         frame_width  = 1)
 
 if barstate.islast
-    obTFlabel  = i_obTF  == "" ? timeframe.period : i_obTF
-    fvgTFlabel = i_fvgTF == "" ? timeframe.period : i_fvgTF
+    obTFlbl  = i_obTF  == "" ? timeframe.period : i_obTF
+    fvgTFlbl = i_fvgTF == "" ? timeframe.period : i_fvgTF
 
-    table.cell(T, 0, 0, "SMC | OB(" + obTFlabel + ")  FVG(" + fvgTFlabel + ")",
+    table.cell(T, 0, 0, "SMC | OB(" + obTFlbl + ")  FVG(" + fvgTFlbl + ")",
                text_color=color.white, text_size=size.small,
                bgcolor=color.new(color.navy, 15), text_halign=text.align_center)
     table.merge_cells(T, 0, 0, 1, 0)
@@ -505,28 +481,28 @@ if barstate.islast
 
     volStr   = hasVol ? str.tostring(math.round(relVol, 2)) + "x avg" : "No Volume Data"
     volColor = isHighVol ? (isBullCandle ? color.lime : color.red) : color.gray
-    table.cell(T, 0, 8, "Volume",       text_color=color.silver, text_size=size.small)
-    table.cell(T, 1, 8, volStr,         text_color=volColor,     text_size=size.small)
+    table.cell(T, 0, 8, "Volume",        text_color=color.silver, text_size=size.small)
+    table.cell(T, 1, 8, volStr,          text_color=volColor,     text_size=size.small)
 
-    engulfStr   = bullEngulf ? "BULL ENGULF" : bearEngulf ? "BEAR ENGULF" : "—"
-    engulfColor = bullEngulf ? color.lime     : bearEngulf ? color.red     : color.gray
-    table.cell(T, 0, 9, "Engulf",       text_color=color.silver, text_size=size.small)
-    table.cell(T, 1, 9, engulfStr,      text_color=engulfColor,  text_size=size.small)
+    engStr   = bullEngulf ? "BULL ENGULF" : bearEngulf ? "BEAR ENGULF" : "—"
+    engColor = bullEngulf ? color.lime     : bearEngulf ? color.red     : color.gray
+    table.cell(T, 0, 9, "Engulf",        text_color=color.silver, text_size=size.small)
+    table.cell(T, 1, 9, engStr,          text_color=engColor,     text_size=size.small)
 
-    deltaStr   = strongBullDelta ? "BULL " + str.tostring(math.round(deltaRatio * 100)) + "%" :
-                 strongBearDelta ? "BEAR " + str.tostring(math.round(deltaRatio * 100)) + "%" :
-                 str.tostring(math.round(deltaRatio * 100)) + "% (weak)"
-    deltaColor = strongBullDelta ? color.lime : strongBearDelta ? color.red : color.gray
-    table.cell(T, 0, 10, "Delta Bias",  text_color=color.silver, text_size=size.small)
-    table.cell(T, 1, 10, deltaStr,      text_color=deltaColor,   text_size=size.small)
+    dltStr   = strongBullDelta ? "BULL " + str.tostring(math.round(deltaRatio*100)) + "%" :
+               strongBearDelta ? "BEAR " + str.tostring(math.round(deltaRatio*100)) + "%" :
+               str.tostring(math.round(deltaRatio*100)) + "% (weak)"
+    dltColor = strongBullDelta ? color.lime : strongBearDelta ? color.red : color.gray
+    table.cell(T, 0, 10, "Delta Bias",   text_color=color.silver, text_size=size.small)
+    table.cell(T, 1, 10, dltStr,         text_color=dltColor,     text_size=size.small)
 
-    trapStr   = bearTrap ? "BEAR TRAP ↑" : bullTrap ? "BULL TRAP ↓" : "—"
-    trapColor = bearTrap ? color.lime     : bullTrap ? color.red     : color.gray
-    table.cell(T, 0, 11, "Trap Candle", text_color=color.silver, text_size=size.small)
-    table.cell(T, 1, 11, trapStr,       text_color=trapColor,    text_size=size.small)
+    trpStr   = bearTrap ? "BEAR TRAP ↑" : bullTrap ? "BULL TRAP ↓" : "—"
+    trpColor = bearTrap ? color.lime     : bullTrap ? color.red     : color.gray
+    table.cell(T, 0, 11, "Trap Candle",  text_color=color.silver, text_size=size.small)
+    table.cell(T, 1, 11, trpStr,         text_color=trpColor,     text_size=size.small)
 
     sentStr   = instScore > 0 ? "BUYING  (+" + str.tostring(instScore) + ")" :
-                instScore < 0 ? "SELLING (" + str.tostring(instScore) + ")" : "NEUTRAL"
+                instScore < 0 ? "SELLING (" +  str.tostring(instScore) + ")" : "NEUTRAL"
     sentColor = instScore > 0 ? color.lime : instScore < 0 ? color.red : color.gray
     table.cell(T, 0, 12, "Inst. Sentiment", text_color=color.white, text_size=size.small,
                bgcolor=color.new(color.navy, 50))
@@ -535,5 +511,5 @@ if barstate.islast
 
     posStr   = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "Flat"
     posColor = strategy.position_size > 0 ? color.lime : strategy.position_size < 0 ? color.red : color.gray
-    table.cell(T, 0, 13, "Position",    text_color=color.silver, text_size=size.small)
-    table.cell(T, 1, 13, posStr,        text_color=posColor,     text_size=size.small)
+    table.cell(T, 0, 13, "Position",     text_color=color.silver, text_size=size.small)
+    table.cell(T, 1, 13, posStr,         text_color=posColor,     text_size=size.small)
