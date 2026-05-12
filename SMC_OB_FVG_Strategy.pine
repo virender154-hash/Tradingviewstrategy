@@ -387,11 +387,10 @@ if shortEntry and not na(shortSL) and not na(shortTP) and shortTP < close and sh
 // ═══════════════════════════════════════════════════════
 
 // ── Swing pivots ──
-if i_showSwings
-    plotshape(not na(swH), "Swing High", shape.labeldown, location.abovebar,
-             color.new(color.red,  40), text="H", textcolor=color.white, size=size.tiny, offset=-i_swingLen)
-    plotshape(not na(swL), "Swing Low",  shape.labelup,   location.belowbar,
-             color.new(color.teal, 40), text="L", textcolor=color.white, size=size.tiny, offset=-i_swingLen)
+plotshape(i_showSwings and not na(swH), "Swing High", shape.labeldown, location.abovebar,
+         color.new(color.red,  40), text="H", textcolor=color.white, size=size.tiny, offset=-i_swingLen)
+plotshape(i_showSwings and not na(swL), "Swing Low",  shape.labelup,   location.belowbar,
+         color.new(color.teal, 40), text="L", textcolor=color.white, size=size.tiny, offset=-i_swingLen)
 
 // ── High-volume bar background ──
 bgcolor(i_showVolBG and isHighVol ?
