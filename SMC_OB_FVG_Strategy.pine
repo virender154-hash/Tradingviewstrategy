@@ -350,7 +350,7 @@ shortEntry = inShortZone and (i_requireConf ? instConfirmShort : true) and
 longSL = not na(liqSSL) ? liqSSL - syminfo.mintick * 3 :
          not na(bOB_lo)  ? bOB_lo  - (bOB_hi - bOB_lo) * 0.10 : na
 
-longTP = na(float)
+float longTP = na
 for i = 0 to array.size(shArr) - 1
     h = f_swH(i)
     if not na(h) and h > close * 1.002
@@ -362,7 +362,7 @@ if na(longTP) and not na(longSL)
 shortSL = not na(liqBSL) ? liqBSL + syminfo.mintick * 3 :
           not na(rOB_hi)  ? rOB_hi  + (rOB_hi - rOB_lo) * 0.10 : na
 
-shortTP = na(float)
+float shortTP = na
 for i = 0 to array.size(slArr) - 1
     l = f_swL(i)
     if not na(l) and l < close * 0.998
