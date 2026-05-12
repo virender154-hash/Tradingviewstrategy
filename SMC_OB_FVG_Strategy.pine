@@ -135,7 +135,8 @@ if rOB_ok and close > rOB_hi
 // Draw boxes
 if bOB_new
     if i_showOB
-        if not na(bOB_box) then box.delete(bOB_box)
+        if not na(bOB_box)
+            box.delete(bOB_box)
         bOB_box := box.new(bOB_idx, bOB_hi, bar_index, bOB_lo,
                          border_color=color.lime, bgcolor=i_colBullOB,
                          border_width=2, extend=extend.right)
@@ -143,14 +144,17 @@ if bOB_new
 
 if rOB_new
     if i_showOB
-        if not na(rOB_box) then box.delete(rOB_box)
+        if not na(rOB_box)
+            box.delete(rOB_box)
         rOB_box := box.new(rOB_idx, rOB_hi, bar_index, rOB_lo,
                          border_color=color.red, bgcolor=i_colBearOB,
                          border_width=2, extend=extend.right)
     rOB_new := false
 
-if bOB_ok and not na(bOB_box) then box.set_right(bOB_box, bar_index)
-if rOB_ok and not na(rOB_box) then box.set_right(rOB_box, bar_index)
+if bOB_ok and not na(bOB_box)
+    box.set_right(bOB_box, bar_index)
+if rOB_ok and not na(rOB_box)
+    box.set_right(rOB_box, bar_index)
 
 // ═══════════════════════════════════════════════════════
 //              FAIR VALUE GAP (FVG)
@@ -167,7 +171,8 @@ var bool  rFVG_ok  = false, var box rFVG_box = na
 if low > high[2]
     bFVG_top := low, bFVG_bot := high[2], bFVG_ok := true
     if i_showFVG
-        if not na(bFVG_box) then box.delete(bFVG_box)
+        if not na(bFVG_box)
+            box.delete(bFVG_box)
         bFVG_box := box.new(bar_index - 2, bFVG_top, bar_index, bFVG_bot,
                           border_color=color.aqua, bgcolor=i_colBullFVG,
                           border_width=1, extend=extend.right)
@@ -175,17 +180,22 @@ if low > high[2]
 if high < low[2]
     rFVG_top := low[2], rFVG_bot := high, rFVG_ok := true
     if i_showFVG
-        if not na(rFVG_box) then box.delete(rFVG_box)
+        if not na(rFVG_box)
+            box.delete(rFVG_box)
         rFVG_box := box.new(bar_index - 2, rFVG_top, bar_index, rFVG_bot,
                           border_color=color.orange, bgcolor=i_colBearFVG,
                           border_width=1, extend=extend.right)
 
-if bFVG_ok and close < bFVG_bot then bFVG_ok := false
-if rFVG_ok and close > rFVG_top then rFVG_ok := false
+if bFVG_ok and close < bFVG_bot
+    bFVG_ok := false
+if rFVG_ok and close > rFVG_top
+    rFVG_ok := false
 
 if i_showFVG
-    if bFVG_ok and not na(bFVG_box) then box.set_right(bFVG_box, bar_index)
-    if rFVG_ok and not na(rFVG_box) then box.set_right(rFVG_box, bar_index)
+    if bFVG_ok and not na(bFVG_box)
+        box.set_right(bFVG_box, bar_index)
+    if rFVG_ok and not na(rFVG_box)
+        box.set_right(rFVG_box, bar_index)
 
 // ═══════════════════════════════════════════════════════
 //              LIQUIDITY MAPPING
@@ -219,16 +229,20 @@ else
 
 if i_showLiq and barstate.islast
     if not na(liqSSL)
-        if not na(ssl_line) then line.delete(ssl_line)
-        if not na(ssl_lbl)  then label.delete(ssl_lbl)
+        if not na(ssl_line)
+            line.delete(ssl_line)
+        if not na(ssl_lbl) 
+            label.delete(ssl_lbl)
         ssl_line := line.new(bar_index - 80, liqSSL, bar_index + 15, liqSSL,
                             color=i_colSSL, style=line.style_dashed, width=2)
         ssl_lbl  := label.new(bar_index + 16, liqSSL, "SSL  (Long SL)",
                              color=i_colSSL, textcolor=color.black,
                              style=label.style_label_left, size=size.small)
     if not na(liqBSL)
-        if not na(bsl_line) then line.delete(bsl_line)
-        if not na(bsl_lbl)  then label.delete(bsl_lbl)
+        if not na(bsl_line)
+            line.delete(bsl_line)
+        if not na(bsl_lbl) 
+            label.delete(bsl_lbl)
         bsl_line := line.new(bar_index - 80, liqBSL, bar_index + 15, liqBSL,
                             color=i_colBSL, style=line.style_dashed, width=2)
         bsl_lbl  := label.new(bar_index + 16, liqBSL, "BSL  (Short SL)",
